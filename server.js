@@ -34,33 +34,47 @@ async function initWhatsApp() {
     });
 
     sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        
-        if (qr) {
-            console.log('QR Received');
-            qrCode = await qrcode.toDataURL(qr);
-            connectionStatus = 'scan_qr';
-        }
-        
-        if (connection === 'close') {
-            const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('Connection closed due to ', lastDisconnect?.error, ', reconnecting ', shouldReconnect);
-            
-            if (shouldReconnect) {
-                connectionStatus = 'reconnecting';
-                initWhatsApp();
-            } else {
-                connectionStatus = 'disconnected';
-                isConnected = false;
-                qrCode = null;
-            }
-        } else if (connection === 'open') {
-            console.log('WhatsApp Connected!');
-            connectionStatus = 'connected';
-            isConnected = true;
-            qrCode = null;
-        }
-    });
+  const { connection, lastDisconnect, qr } = update;
+
+  console.log('🔌 Connection update:', connection);
+  
+  if (qr) {
+    console.log('📱 QR Received - please scan within 20 seconds');
+    try {
+      qrCode = await qrcode.toDataURL(qr);
+      connectionStatus = 'scan_qr';
+      console.log('✅ QR Code generated');
+    } catch (error) {
+      console.log('❌ QR generation failed:', error);
+    }
+  }
+
+  if (connection === 'close') {
+    const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+    console.log('🔌 Connection closed, reconnecting:', shouldReconnect);
+
+    if (shouldReconnect) {
+      connectionStatus = 'reconnecting';
+      console.log('🔄 Attempting reconnect in 3 seconds...');
+      setTimeout(() => {
+        console.log('🚀 Starting reconnect...');
+        initWhatsApp();
+      }, 3000);
+    } else {
+      connectionStatus = 'disconnected';
+      isConnected = false;
+      qrCode = null;
+      console.log('❌ Logged out, please scan QR again');
+    }
+  } else if (connection === 'open') {
+    console.log('✅ ✅ ✅ WhatsApp CONNECTED SUCCESSFULLY!');
+    console.log('🤖 Bot user:', sock.user?.id || 'Unknown');
+    console.log('📱 Platform:', sock.user?.platform || 'Unknown');
+    connectionStatus = 'connected';
+    isConnected = true;
+    qrCode = null;
+  }
+});
 
     sock.ev.on('creds.update', saveCreds);
 }
@@ -88,30 +102,78 @@ app.get('/api/connect', async (req, res) => {
 });
 
 app.get('/api/groups', async (req, res) => {
+  try {
     if (!isConnected || !sock) {
-        return res.json({ groups: [] });
+      console.log('❌ Groups API: WhatsApp not connected');
+      return res.json({ groups: [], error: 'WhatsApp not connected' });
     }
 
+    console.log('🔄 Fetching groups...');
+    
+    const groups = [];
+    
     try {
-        const groups = [];
-        const chats = sock.chats.all();
-        
-        for (const chat of chats) {
-            if (chat.id.endsWith('@g.us')) { // Group chat
-                const groupInfo = await sock.groupMetadata(chat.id);
-                groups.push({
-                    id: groupInfo.id,
-                    name: groupInfo.subject,
-                    participantsCount: groupInfo.participants.length
-                });
-            }
-        }
-        
-        res.json({ groups });
+      // Method 1: Try to get all participating groups
+      console.log('Trying groupFetchAllParticipating...');
+      const groupList = await sock.groupFetchAllParticipating();
+      
+      console.log(`📊 Found ${Object.keys(groupList).length} groups`);
+      
+      for (const [jid, group] of Object.entries(groupList)) {
+        groups.push({
+          id: jid,
+          name: group.subject || 'Unknown Group',
+          participantsCount: group.participants?.length || 0
+        });
+        console.log(`✅ Group: ${group.subject} (${group.participants?.length || 0} members)`);
+      }
+      
     } catch (error) {
-        console.error('Error fetching groups:', error);
-        res.json({ groups: [], error: error.message });
+      console.log('❌ groupFetchAllParticipating failed:', error.message);
+      
+      // Method 2: Try alternative approach
+      try {
+        console.log('Trying alternative group fetch...');
+        if (sock.chats) {
+          const chats = Object.values(sock.chats);
+          const groupChats = chats.filter(chat => chat.id.endsWith('@g.us'));
+          
+          console.log(`📊 Found ${groupChats.length} group chats`);
+          
+          for (const chat of groupChats) {
+            try {
+              const groupInfo = await sock.groupMetadata(chat.id);
+              groups.push({
+                id: groupInfo.id,
+                name: groupInfo.subject || 'Unknown Group',
+                participantsCount: groupInfo.participants.length
+              });
+              console.log(`✅ Group: ${groupInfo.subject}`);
+            } catch (metaError) {
+              console.log(`⚠️ Could not fetch metadata for ${chat.id}`);
+            }
+          }
+        }
+      } catch (altError) {
+        console.log('❌ Alternative method also failed:', altError.message);
+      }
     }
+    
+    console.log(`🎯 Returning ${groups.length} groups total`);
+    res.json({ 
+      groups,
+      total: groups.length,
+      status: 'success'
+    });
+    
+  } catch (error) {
+    console.error('💥 Groups API error:', error);
+    res.json({ 
+      groups: [], 
+      error: error.message,
+      status: 'error'
+    });
+  }
 });
 
 app.post('/api/pushkontak', async (req, res) => {
@@ -234,14 +296,15 @@ app.get('/health', (req, res) => {
     });
 });
 
-// Start Server
+// Start server
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 WhatsApp Bot Server (Baileys) running on port ${PORT}`);
-    console.log(`📱 Health check: http://localhost:${PORT}/health`);
-    console.log(`🔗 API Base: http://localhost:${PORT}/api`);
-    
-    // Initialize WhatsApp
-    initWhatsApp();
+  console.log(`🚀 WhatsApp Bot Server running on port ${PORT}`);
+  console.log(`📱 Health: http://localhost:${PORT}/health`);
+  console.log(`🔗 API: http://localhost:${PORT}/api`);
+  
+  // Force new connection on startup
+  console.log('🔄 Initializing WhatsApp connection...');
+  initWhatsApp();
 });
 
 // Error handling
