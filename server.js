@@ -2,118 +2,53 @@ const express = require('express');
 const cors = require('cors');
 
 const app = express();
+// Railway menggunakan PORT environment variable
 const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 
-// Basic error handling
-app.use((req, res, next) => {
-  console.log(`📨 ${req.method} ${req.path}`);
-  next();
-});
-
-// Routes
-app.get('/', (req, res) => {
-  console.log('✅ Root endpoint hit');
-  res.json({ 
-    message: '🚀 WhatsApp Bot Backend is RUNNING!',
-    status: 'online',
-    timestamp: new Date().toISOString(),
-    version: '2.0.0'
-  });
-});
-
+// Health check endpoint (WAJIB untuk Railway)
 app.get('/health', (req, res) => {
-  console.log('✅ Health check hit');
-  res.json({ 
+  res.status(200).json({ 
     status: 'OK',
-    service: 'WhatsApp Bot Backend',
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
+    message: 'Server is healthy',
+    timestamp: new Date().toISOString()
   });
 });
 
-// API routes untuk frontend
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'WhatsApp Bot Backend is RUNNING!',
+    status: 'online'
+  });
+});
+
+// Simple API endpoints
 app.get('/api/status', (req, res) => {
-  console.log('✅ API Status hit');
   res.json({ 
-    status: 'disconnected', 
+    status: 'ready',
     connected: false,
-    qr: null,
-    message: 'Backend online - Ready for WhatsApp connection'
+    message: 'Backend ready for WhatsApp connection'
   });
 });
 
-app.get('/api/groups', (req, res) => {
-  console.log('✅ API Groups hit');
-  res.json({ 
-    groups: [
-      { 
-        id: 'test-group-1', 
-        name: 'Group Demo 1', 
-        participantsCount: 25,
-        isReadOnly: false
-      },
-      { 
-        id: 'test-group-2', 
-        name: 'Group Demo 2', 
-        participantsCount: 15,
-        isReadOnly: false
-      }
-    ],
-    total: 2,
-    message: 'Demo groups - Backend connected successfully'
+// Start server dengan error handling
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ Server successfully started on port ${PORT}`);
+  console.log(`📍 Health check: http://0.0.0.0:${PORT}/health`);
+}).on('error', (err) => {
+  console.error('❌ Server failed to start:', err);
+  process.exit(1);
+});
+
+// Handle graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('🛑 Received SIGTERM, shutting down gracefully');
+  server.close(() => {
+    console.log('✅ Server closed');
+    process.exit(0);
   });
-});
-
-app.get('/api/connect', (req, res) => {
-  console.log('✅ API Connect hit');
-  res.json({ 
-    status: 'need_qr',
-    message: 'WhatsApp connection endpoint ready',
-    qr: null
-  });
-});
-
-// 404 Handler
-app.use('*', (req, res) => {
-  console.log('❌ 404 - Route not found:', req.originalUrl);
-  res.status(404).json({
-    error: 'Route not found',
-    path: req.originalUrl,
-    availableRoutes: [
-      'GET  /',
-      'GET  /health',
-      'GET  /api/status',
-      'GET  /api/groups',
-      'GET  /api/connect'
-    ]
-  });
-});
-
-// Error handler
-app.use((error, req, res, next) => {
-  console.error('💥 Server Error:', error);
-  res.status(500).json({
-    error: 'Internal Server Error',
-    message: error.message
-  });
-});
-
-// Start server
-app.listen(PORT, '0.0.0.0', () => {
-  console.log('='.repeat(50));
-  console.log('🚀 WhatsApp Bot Server STARTED!');
-  console.log(`📍 Port: ${PORT}`);
-  console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🕒 Started: ${new Date().toISOString()}`);
-  console.log('='.repeat(50));
-});
-
-// Graceful shutdown
-process.on('SIGINT', () => {
-  console.log('🛑 Shutting down gracefully...');
-  process.exit(0);
 });
