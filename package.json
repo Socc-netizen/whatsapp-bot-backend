@@ -4,10 +4,14 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "build": "echo 'No build step'"
+    "docker:build": "docker build -t whatsapp-bot .",
+    "docker:run": "docker run -p 3000:3000 whatsapp-bot"
   },
   "dependencies": {
     "express": "^4.18.2",
     "cors": "^2.8.5"
+  },
+  "engines": {
+    "node": "18.x"
   }
 }
